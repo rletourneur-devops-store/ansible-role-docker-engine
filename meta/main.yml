@@ -14,12 +14,12 @@ galaxy_info:
   # - GPL-3.0-only
   # - Apache-2.0
   # - CC-BY-4.0
-  license: proprietary
+  license: MIT
 
   min_ansible_version: 2.10
 
-  namespace: devops_store
-  role_name: docker_engine
+  namespace: rletourneur-devops-store
+  role_name: docker-engine
 
   platforms:
     - name: Debian
