@@ -1,6 +1,6 @@
 galaxy_info:
   author: Robin LETOURNEUR
-  description: Installation et configuration de Docker Engine (Multi-OS)
+  description: "Production-ready Docker CE & Compose V2 setup. Includes JSON log rotation (prevents disk saturation), non-root user config, and security hardening for Debian/Ubuntu."
   company: DevOps Store (Robin LETOURNEUR)
 
   # If the issue tracker for your role is not on github, uncomment the
@@ -14,12 +14,12 @@ galaxy_info:
   # - GPL-3.0-only
   # - Apache-2.0
   # - CC-BY-4.0
-  license: proprietary
+  license: MIT
 
   min_ansible_version: 2.10
 
-  namespace: devops_store
-  role_name: docker_engine
+  namespace: rletourneur-devops-store
+  role_name: docker-engine
 
   platforms:
     - name: Debian
@@ -36,9 +36,12 @@ galaxy_info:
   # If this a Container Enabled role, provide the minimum Ansible Container version.
   # min_ansible_container_version:
 
-  galaxy_tags:
+galaxy_tags:
     - docker
-    - system
+    - containers
+    - security
+    - production
+    - log-rotation 
     - debian
     - ubuntu
     # List tags for your role here, one per line. A tag is a keyword that describes

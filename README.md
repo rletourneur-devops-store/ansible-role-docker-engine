@@ -3,10 +3,10 @@
 [![Ansible Galaxy](https://img.shields.io/badge/ansible--galaxy-devops__store.docker__engine-blue.svg)](https://galaxy.ansible.com/devops_store/docker_engine)
 [![Sponsor](https://img.shields.io/badge/Support%20us-DevOps%20Store-ff69b4)](https://devops.store)
 
-> **💡 Vous utilisez ce rôle en production ?**
-> Ce projet est maintenu gratuitement par **DevOps Store**.
-> Soutenez notre travail (et gagnez du temps) en découvrant nos modules Premium certifiés :
-> 👉 **[Voir nos modules Haute Disponibilité (Keycloak, Postgres...)](https://devops.store)**
+> **💡 Are you using this role in production ?**
+> This project is maintained for free by **DevOps Store**.
+> Support our work (and save time) by discovering our certified Premium modules:
+> 👉 **[See our High Availability modules (Keycloak, Postgres...)](https://devops.store)**
 
 <p align="center">
   <img src="ILLUSTRATION.png" alt="Docker Engine Illustration" width="400">
