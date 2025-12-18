@@ -1,0 +1,35 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  gather_facts: false # IMPORTANT : On désactive car Python n'est pas encore là
+
+  pre_tasks:
+    # --- ASTUCE CRITIQUE POUR DOCKER-IN-DOCKER ---
+    # On empêche apt de démarrer les services automatiquement après installation.
+    # Cela évite que Docker ne crashe à l'installation à cause d'un driver de stockage incorrect.
+    # Votre rôle configurera ensuite daemon.json correctement, puis démarrera le service proprement.
+    - name: Prevent services from starting immediately after installation
+      ansible.builtin.copy:
+        content: |
+          #!/bin/sh
+          exit 101
+        dest: /usr/sbin/policy-rc.d
+        mode: '0755'
+      
+    # 2. FIX CRITIQUE : Collecte explicite des informations système
+    # C'est cette tâche qui va définir 'ansible_distribution'
+    - name: Collect system facts (Fix for ansible_distribution undefined)
+      ansible.builtin.setup:
+
+  vars:
+    # --- Vos variables de test ---
+    docker_dns_servers:
+      - "1.1.1.1"
+      - "8.8.8.8"
+    docker_insecure_registries:
+      - "test.registry.local:5000"
+    docker_data_root: "/etc/docker-custom-root"
+
+  roles:
+    - role: devops_store.docker_engine

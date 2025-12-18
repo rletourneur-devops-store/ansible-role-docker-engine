@@ -1,0 +1,45 @@
+---
+
+# ==========================================
+# ÉTAPE 3 : GESTION INTELLIGENTE DAEMON.JSON (Fusion)
+# ==========================================
+- name: Vérifier si daemon.json existe déjà
+  ansible.builtin.stat:
+    path: /etc/docker/daemon.json
+  register: docker_daemon_file
+
+- name: Lire le contenu existant
+  ansible.builtin.slurp:
+    src: /etc/docker/daemon.json
+  register: existing_daemon_content
+  when: docker_daemon_file.stat.exists
+
+- name: Préparer la config Metrics (Conditionnelle)
+  ansible.builtin.set_fact:
+    metrics_config: >-
+      {{ {"metrics-addr": docker_metrics_addr, "experimental": true} if docker_enable_metrics else {} }}
+
+- name: Préparer config Data Root (Conditionnelle)
+  ansible.builtin.set_fact:
+    data_root_config: >-
+      {{ {"data-root": docker_data_root} if docker_data_root | length > 0 else {} }}
+
+- name: Calculer la configuration finale (Fusion intelligente)
+  ansible.builtin.set_fact:
+    # 1. Lit l'existant (ou {})
+    # 2. Combine avec les configs de base (DNS, Logs, Registres)
+    # 3. Combine avec la config Metrics (si activée)
+    final_docker_config: >-
+      {{
+        (existing_daemon_content['content'] | b64decode | from_json if docker_daemon_file.stat.exists else {})
+        | combine(docker_custom_config_base, recursive=True)
+        | combine(metrics_config, recursive=True)
+        | combine(data_root_config, recursive=True)
+      }}
+
+- name: Écrire le fichier daemon.json final
+  ansible.builtin.copy:
+    content: "{{ final_docker_config | to_nice_json }}"
+    dest: /etc/docker/daemon.json
+    mode: '0644'
+  notify: Restart Docker

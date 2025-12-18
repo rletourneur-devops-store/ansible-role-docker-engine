@@ -1,0 +1,20 @@
+---
+
+# ==========================================
+# ÉTAPE 4 : SERVICE & MAINTENANCE
+# ==========================================
+- name: Démarrer et activer le service Docker
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: yes
+  changed_when: false
+
+- name: Configurer le nettoyage quotidien (Cron)
+  ansible.builtin.cron:
+    name: "Docker System Prune Daily"
+    minute: "{{ docker_prune_minute }}"
+    hour: "{{ docker_prune_hour }}"
+    job: "/usr/bin/docker system prune {{ docker_prune_arguments }} > /dev/null 2>&1"
+    state: "{{ 'present' if docker_prune_enabled else 'absent' }}"
+    user: root

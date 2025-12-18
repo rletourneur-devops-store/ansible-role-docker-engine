@@ -1,0 +1,71 @@
+---
+
+# ==========================================
+# ÉTAPE 1 : PRÉREQUIS & DÉPÔTS (Multi-OS)
+# ==========================================
+- name: Installation des dépendances système
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+    state: present
+    update_cache: yes
+  register: apt_deps
+  retries: 3
+  delay: 5
+  until: apt_deps is success
+
+- name: Création du dossier keyrings
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Vérifier si une ancienne clé docker.gpg existe
+  ansible.builtin.stat:
+    path: /etc/apt/keyrings/docker.gpg
+  register: old_docker_gpg
+
+- name: Suppression de l'ancienne clé GPG Docker (éviter conflits)
+  ansible.builtin.file:
+    path: /etc/apt/keyrings/docker.gpg
+    state: absent
+  when: old_docker_gpg.stat.exists
+
+- name: Suppression des anciennes sources Docker (éviter conflits)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/apt/sources.list.d/docker.sources
+    - /etc/apt/sources.list.d/docker.list
+  when: old_docker_gpg.stat.exists
+
+- name: Téléchargement de la clé GPG Docker (Dynamique OS)
+  ansible.builtin.get_url:
+    url: "https://download.docker.com/linux/{{ docker_os_type }}/gpg"
+    dest: /etc/apt/keyrings/docker.asc
+    mode: '0644'
+
+- name: Ajout du dépôt Docker (Dynamique OS/Release)
+  ansible.builtin.apt_repository:
+    repo: "deb [arch={{ docker_arch }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/{{ docker_os_type }} {{ docker_release_codename }} stable"
+    state: present
+    filename: docker
+
+- name: Installation de Docker Engine et plugins
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: "{{ docker_package_state }}"
+    update_cache: yes
+  register: apt_docker
+  retries: 3
+  delay: 5
+  until: apt_docker is success

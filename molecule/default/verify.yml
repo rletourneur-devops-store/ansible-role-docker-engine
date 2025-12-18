@@ -1,0 +1,46 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  tasks:
+    # 1. Vérifier que Docker est installé et tourne
+    - name: Check if Docker service is running
+      ansible.builtin.command: systemctl status docker
+      register: docker_status
+      changed_when: false
+      failed_when: "'active (running)' not in docker_status.stdout"
+
+    # 2. Vérifier le fichier daemon.json (Le test crucial de votre rôle)
+    - name: Read daemon.json
+      ansible.builtin.slurp:
+        src: /etc/docker/daemon.json
+      register: daemon_file
+
+    - name: Parse daemon.json
+      ansible.builtin.set_fact:
+        daemon_config: "{{ daemon_file['content'] | b64decode | from_json }}"
+
+    - name: Validate DNS configuration
+      ansible.builtin.assert:
+        that:
+          - "'1.1.1.1' in daemon_config['dns']"
+        fail_msg: "DNS configuration was not merged correctly inside daemon.json"
+
+    - name: Validate Insecure Registry
+      ansible.builtin.assert:
+        that:
+          - "'test.registry.local:5000' in daemon_config['insecure-registries']"
+        fail_msg: "Insecure registries were not configured correctly"
+
+    - name: Validate Data Root
+      ansible.builtin.assert:
+        that:
+          - "daemon_config['data-root'] == '/etc/docker-custom-root'"
+        fail_msg: "Data Root was not configured correctly"
+
+    # 3. Vérifier le Cron
+    - name: Check if prune cron job exists
+      ansible.builtin.command: crontab -l -u root
+      register: crontab_content
+      changed_when: false
+      failed_when: "'Docker System Prune Daily' not in crontab_content.stdout"

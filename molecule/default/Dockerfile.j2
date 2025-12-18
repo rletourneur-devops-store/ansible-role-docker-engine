@@ -1,0 +1,23 @@
+# molecule/default/Dockerfile.j2
+FROM {{ item.image }}
+
+ENV container=docker
+
+# Installation de Systemd, Sudo, Python (requis pour Ansible)
+# On nettoie pour garder l'image légère
+RUN apt-get update \
+    && apt-get install -y systemd systemd-sysv python3 python3-apt sudo bash ca-certificates curl gnupg lsb-release rsync cron iproute2 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Configuration pour que Systemd fonctionne dans un conteneur
+RUN rm -f /lib/systemd/systemd/multi-user.target.wants/* \
+    && rm -f /etc/systemd/system/*.wants/* \
+    && rm -f /lib/systemd/system/local-fs.target.wants/* \
+    && rm -f /lib/systemd/system/sockets.target.wants/*udev* \
+    && rm -f /lib/systemd/system/sockets.target.wants/*initctl* \
+    && rm -f /lib/systemd/system/basic.target.wants/* \
+    && rm -f /lib/systemd/system/anaconda.target.wants/*
+
+# On définit le point d'entrée sur Systemd
+CMD ["/lib/systemd/systemd"]

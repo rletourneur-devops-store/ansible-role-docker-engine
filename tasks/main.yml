@@ -1,0 +1,7 @@
+---
+# tasks file for docker_engine
+
+- import_tasks: 1-prerequisites_and_install.yml
+- import_tasks: 2-configure_proxy.yml
+- import_tasks: 3-configure_daemon.yml
+- import_tasks: 4-start_and_maintenance.yml

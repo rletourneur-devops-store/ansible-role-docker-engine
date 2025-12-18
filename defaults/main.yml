@@ -1,0 +1,59 @@
+---
+# defaults file for docker_engine
+
+# --- 1. DÉTECTION OS & DÉPÔTS ---
+docker_package_state: present
+docker_arch: "amd64"
+
+# Détection automatique : 'debian' ou 'ubuntu'
+docker_os_type: "{{ ansible_facts['distribution'] | lower }}"
+
+# Détection de la version (codename)
+docker_release_codename: "{{ ansible_facts['distribution_release'] }}"
+
+# Liste des utilisateurs à ajouter au groupe 'docker' (ex: ['jenkins', 'admin'])
+docker_users: []
+
+# Installer le SDK Python (nécessaire pour utiliser les modules Ansible 'community.docker')
+docker_install_pip_sdk: true
+docker_python_package_name: "python3-docker"
+
+# --- 2. CONFIGURATION PROXY (SYSTEMD) ---
+docker_http_proxy: ""
+docker_https_proxy: ""
+docker_no_proxy: ""
+
+# Stockage des données (ex: "/mnt/data/docker-data"). Laisser vide pour par défaut (/var/lib/docker)
+docker_data_root: ""
+
+# --- 3. CONFIGURATION DAEMON.JSON ---
+# DNS & Registres (Vos besoins spécifiques)
+docker_insecure_registries: []
+docker_dns_servers: []
+
+# Logs (Rotation pour éviter la saturation disque)
+docker_log_driver: "json-file"
+docker_log_opts_max_size: "10m"
+docker_log_opts_max_file: "3"
+
+# Haute Disponibilité & Métriques
+docker_live_restore: true
+docker_enable_metrics: false
+docker_metrics_addr: "127.0.0.1:9323"
+
+# --- 4. NETTOYAGE AUTOMATIQUE (CRON) ---
+docker_prune_enabled: true
+docker_prune_hour: "3"
+docker_prune_minute: "0"
+docker_prune_arguments: "--all --force --filter 'until=24h'"
+
+# --- 5. PRÉPARATION DE LA CONFIGURATION (Interne) ---
+# Dictionnaire de base à fusionner dans daemon.json
+docker_custom_config_base:
+  "insecure-registries": "{{ docker_insecure_registries }}"
+  "dns": "{{ docker_dns_servers }}"
+  "log-driver": "{{ docker_log_driver }}"
+  "log-opts":
+    "max-size": "{{ docker_log_opts_max_size }}"
+    "max-file": "{{ docker_log_opts_max_file }}"
+  "live-restore": "{{ docker_live_restore }}"

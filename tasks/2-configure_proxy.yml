@@ -1,0 +1,25 @@
+---
+
+# ==========================================
+# ÉTAPE 2 : CONFIGURATION PROXY (Systemd)
+# ==========================================
+- name: Créer le répertoire de configuration systemd Docker
+  ansible.builtin.file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+    mode: '0755'
+  when: docker_http_proxy | length > 0 or docker_https_proxy | length > 0
+
+- name: Appliquer la configuration Proxy HTTP/HTTPS
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/docker.service.d/http-proxy.conf
+    content: |
+      [Service]
+      Environment="HTTP_PROXY={{ docker_http_proxy }}"
+      Environment="HTTPS_PROXY={{ docker_https_proxy }}"
+      Environment="NO_PROXY={{ docker_no_proxy }}"
+    mode: '0644'
+  when: docker_http_proxy | length > 0 or docker_https_proxy | length > 0
+  notify:
+    - Reload Systemd
+    - Restart Docker
