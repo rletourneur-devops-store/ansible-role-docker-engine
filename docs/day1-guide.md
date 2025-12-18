@@ -1,202 +1,316 @@
-# Docker Engine - Guide Jour 1
+# Docker Engine - Day 1 Guide
 
-Guide de démarrage rapide pour valider et utiliser Docker après déploiement via le rôle `devops_store.docker_engine`.
+Quick start guide after deploying the `devops_store.docker_engine` role.
 
 ---
 
-## 1. Vérifications Post-Déploiement
+## 1. Post-Deployment Verification
 
-### 1.1 Vérifier l'installation Docker
+### 1.1 Verify Docker Installation
 
 ```bash
-# Version Docker installée
+# Check Docker version
 docker --version
 
-# Informations complètes du daemon
-docker info
-```
-
-**Résultat attendu** : Docker Engine installé avec les informations sur le driver de stockage, la configuration réseau et le nombre de conteneurs.
-
-### 1.2 Vérifier le service Docker
-
-```bash
-# État du service
+# Check Docker service status
 sudo systemctl status docker
 
-# Vérifier que Docker démarre au boot
-sudo systemctl is-enabled docker
+# Verify Docker is running
+sudo docker ps
+
+# Check Docker info
+sudo docker info
 ```
 
-### 1.3 Vérifier la configuration daemon.json
+### 1.2 Verify Docker Configuration
 
 ```bash
-# Afficher la configuration
+# Check daemon configuration
 cat /etc/docker/daemon.json | jq .
 
-# Vérifications clés à confirmer :
-# - "live-restore": true
-# - "log-driver": "json-file" avec rotation
-# - "data-root" si configuré
+# Check Docker service configuration
+systemctl cat docker | grep -A 10 Environment
+
+# Verify data root
+docker info | grep "Docker Root Dir"
 ```
 
-### 1.4 Vérifier les utilisateurs Docker
+### 1.3 Verify User Groups
 
 ```bash
-# Liste des utilisateurs du groupe docker
-getent group docker
+# Check if user is in docker group
+groups $USER
 
-# Tester sans sudo (en tant qu'utilisateur configuré)
+# Test Docker without sudo
 docker ps
+
+# If needed, log out and back in for group changes to take effect
 ```
 
 ---
 
-## 2. Commandes de Base
+## 2. Basic Docker Commands
 
-### 2.1 Gestion des Conteneurs
+### 2.1 Container Management
 
 ```bash
-# Lister tous les conteneurs (actifs et arrêtés)
+# List running containers
+docker ps
+
+# List all containers
 docker ps -a
 
-# Démarrer un conteneur de test
-docker run --rm hello-world
+# Run a test container
+docker run hello-world
 
-# Logs d'un conteneur
-docker logs <container_id>
+# Run interactive container
+docker run -it ubuntu bash
 
-# Suivre les logs en temps réel
-docker logs -f <container_id>
+# Stop a container
+docker stop <container_id>
 
-# Exécuter une commande dans un conteneur
-docker exec -it <container_id> /bin/bash
+# Remove a container
+docker rm <container_id>
 ```
 
-### 2.2 Gestion des Images
+### 2.2 Image Management
 
 ```bash
-# Lister les images locales
+# List images
 docker images
 
-# Télécharger une image
-docker pull nginx:latest
+# Pull an image
+docker pull nginx
 
-# Supprimer une image
+# Remove an image
 docker rmi <image_id>
+
+# Build an image
+docker build -t myapp:latest .
 ```
 
-### 2.3 Gestion des Volumes
+### 2.3 Network and Volume
 
 ```bash
-# Lister les volumes
-docker volume ls
-
-# Inspecter un volume
-docker volume inspect <volume_name>
-```
-
-### 2.4 Gestion des Réseaux
-
-```bash
-# Lister les réseaux
+# List networks
 docker network ls
 
-# Inspecter un réseau
+# List volumes
+docker volume ls
+
+# Inspect a network
 docker network inspect bridge
+
+# Create a volume
+docker volume create mydata
 ```
 
 ---
 
-## 3. Vérification du Proxy (si configuré)
+## 3. Health Checks
+
+### 3.1 Quick Health Check
 
 ```bash
-# Vérifier la configuration systemd
-cat /etc/systemd/system/docker.service.d/http-proxy.conf
+# Run all checks
+docker --version && \
+sudo systemctl is-active docker && \
+docker ps && \
+docker info | grep -E "Server Version|Storage Driver|Docker Root Dir"
+```
 
-# Tester l'accès à Docker Hub via proxy
-docker pull alpine:latest
+### 3.2 Verify Proxy Configuration (if configured)
+
+```bash
+# Check proxy settings
+systemctl show docker --property=Environment
+
+# Test pulling image through proxy
+docker pull hello-world
+```
+
+### 3.3 Check Resource Usage
+
+```bash
+# Disk usage
+docker system df
+
+# Detailed disk usage
+docker system df -v
+
+# Container resource usage
+docker stats --no-stream
 ```
 
 ---
 
-## 4. Vérification des Métriques Prometheus (si activées)
+## 4. Common First-Day Tasks
+
+### 4.1 Running Your First Application
 
 ```bash
-# Tester l'endpoint métriques
+# Run Nginx
+docker run -d -p 80:80 --name mynginx nginx
+
+# Verify it's running
+curl http://localhost
+
+# Check logs
+docker logs mynginx
+
+# Stop and remove
+docker stop mynginx
+docker rm mynginx
+```
+
+### 4.2 Using Docker Compose
+
+```bash
+# Create docker-compose.yml
+cat > docker-compose.yml <<EOF
+version: '3.8'
+services:
+  web:
+    image: nginx
+    ports:
+      - "80:80"
+EOF
+
+# Start services
+docker compose up -d
+
+# Check status
+docker compose ps
+
+# View logs
+docker compose logs
+
+# Stop services
+docker compose down
+```
+
+### 4.3 Managing Persistent Data
+
+```bash
+# Create a volume
+docker volume create mydata
+
+# Run container with volume
+docker run -d -v mydata:/data nginx
+
+# Inspect volume
+docker volume inspect mydata
+
+# Backup volume
+docker run --rm -v mydata:/source -v $(pwd):/backup ubuntu tar czf /backup/mydata.tar.gz /source
+```
+
+---
+
+## 5. Verifying Special Configurations
+
+### 5.1 Custom Data Root
+
+If you configured a custom data root:
+
+```bash
+# Verify data root location
+docker info | grep "Docker Root Dir"
+
+# Check disk usage at custom location
+df -h /mnt/data  # Or your custom path
+
+# List contents
+sudo ls -la /mnt/data/docker
+```
+
+### 5.2 Custom DNS
+
+If you configured custom DNS:
+
+```bash
+# Check daemon.json
+cat /etc/docker/daemon.json | jq '.dns'
+
+# Test DNS resolution in container
+docker run --rm alpine nslookup google.com
+```
+
+### 5.3 Insecure Registries
+
+If you configured insecure registries:
+
+```bash
+# Check configuration
+cat /etc/docker/daemon.json | jq '.["insecure-registries"]'
+
+# Test pull from insecure registry
+docker pull your-registry:5000/image:tag
+```
+
+### 5.4 Prometheus Metrics (if enabled)
+
+If metrics are enabled:
+
+```bash
+# Check metrics port
 curl http://localhost:9323/metrics
 
-# Métriques clés à vérifier :
-# - engine_daemon_container_states_containers
-# - engine_daemon_image_actions_seconds
+# Verify metrics in daemon.json
+cat /etc/docker/daemon.json | jq '.["metrics-addr"]'
 ```
 
 ---
 
-## 5. Vérification du Cron de Maintenance
+## 6. Automatic Cleanup Verification
+
+### 6.1 Verify Cron Job
 
 ```bash
-# Vérifier la tâche cron de nettoyage
+# Check if prune job is configured
 sudo crontab -l | grep docker
 
-# Résultat attendu : docker system prune à 3h00
+# Manual cleanup test
+docker system prune -a --force --filter 'until=24h' --dry-run
 ```
 
 ---
 
-## 6. Checklist de Santé Rapide
-
-| Vérification | Commande | État Attendu |
-|--------------|----------|--------------|
-| Service Docker actif | `systemctl is-active docker` | `active` |
-| Conteneur test | `docker run --rm hello-world` | `Hello from Docker!` |
-| Daemon config | `docker info --format '{{.LiveRestoreEnabled}}'` | `true` |
-| Data root | `docker info --format '{{.DockerRootDir}}'` | Chemin configuré |
-| Utilisateurs | `groups $USER \| grep docker` | `docker` présent |
-
----
-
-## 7. Accès et Logs
-
-### Logs Docker daemon
+## 7. Python Docker SDK Verification
 
 ```bash
-# Logs du service Docker
-sudo journalctl -u docker -f
+# Check if Python Docker SDK is installed
+python3 -c "import docker; print(docker.__version__)"
 
-# Logs d'un conteneur spécifique
-docker logs --tail 100 <container_id>
+# Test basic functionality
+python3 <<EOF
+import docker
+client = docker.from_env()
+print(client.version())
+EOF
 ```
-
-### Emplacement des données
-
-| Élément | Chemin par défaut |
-|---------|-------------------|
-| Daemon config | `/etc/docker/daemon.json` |
-| Data root | `/var/lib/docker` (ou `docker_data_root`) |
-| Logs conteneurs | `<data-root>/containers/<id>/` |
-| Images | `<data-root>/overlay2/` |
 
 ---
 
-## 8. Premiers Pas - Test Complet
+## 8. Tips and Best Practices
 
-```bash
-# 1. Télécharger une image
-docker pull nginx:alpine
+1. **Always use docker compose** for multi-container apps
+2. **Name your containers** with `--name` for easier management
+3. **Use volumes** for persistent data, not bind mounts in production
+4. **Tag your images** properly (avoid `latest` in production)
+5. **Clean up regularly** with `docker system prune`
+6. **Monitor resources** with `docker stats`
+7. **Check logs** with `docker logs -f <container>`
+8. **Use .dockerignore** to reduce image sizes
+9. **Run as non-root** inside containers when possible
+10. **Keep Docker updated** by re-running the role
 
-# 2. Démarrer un conteneur
-docker run -d --name test-nginx -p 8080:80 nginx:alpine
+---
 
-# 3. Vérifier le conteneur
-docker ps
+## 9. Next Steps
 
-# 4. Tester l'accès
-curl http://localhost:8080
-
-# 5. Arrêter et supprimer
-docker stop test-nginx
-docker rm test-nginx
-```
-
-**Résultat attendu** : Page HTML Nginx par défaut affichée.
+- Review [`day2-runbook.md`](day2-runbook.md) for troubleshooting and advanced usage
+- Set up Docker Compose for your applications
+- Configure container monitoring
+- Plan backup strategy for volumes
+- Review security best practices

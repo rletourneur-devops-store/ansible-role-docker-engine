@@ -1,588 +1,491 @@
-# Docker Engine - Runbook Opérations Jour 2+
+# Docker Engine - Day 2+ Runbook
 
-Runbook détaillé pour les opérations avancées, la maintenance et les scénarios de récupération Docker.
-
----
-
-## Table des Matières
-
-1. [Troubleshooting Courant](#1-troubleshooting-courant)
-2. [Gestion de l'Espace Disque](#2-gestion-de-lespace-disque)
-3. [Problèmes Réseau](#3-problèmes-réseau)
-4. [Mise à Jour Docker](#4-mise-à-jour-docker)
-5. [Récupération de Conteneurs](#5-récupération-de-conteneurs)
-6. [Scénarios Catastrophe](#6-scénarios-catastrophe)
-7. [Configuration Avancée](#7-configuration-avancée)
-8. [Monitoring et Alertes](#8-monitoring-et-alertes)
+Operational guide for managing and troubleshooting Docker Engine.
 
 ---
 
-## 1. Troubleshooting Courant
+## 1. Configuration Management
 
-### 1.1 Docker daemon ne démarre pas
+### 1.1 Modifying daemon.json
 
-**Symptômes** : `systemctl status docker` montre `failed`
-
-**Diagnostic** :
 ```bash
-# Voir les logs détaillés
-sudo journalctl -xeu docker --no-pager | tail -100
+# Backup current configuration
+sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.backup
 
-# Vérifier la syntaxe du daemon.json
-sudo cat /etc/docker/daemon.json | jq .
+# Edit configuration
+sudo nano /etc/docker/daemon.json
+
+# Validate JSON syntax
+cat /etc/docker/daemon.json | jq .
+
+# Reload Docker
+sudo systemctl reload docker
 ```
 
-**Causes fréquentes et solutions** :
+### 1.2 Adding Custom DNS Servers
 
-| Cause | Solution |
-|-------|----------|
-| `daemon.json` invalide | Corriger la syntaxe JSON, vérifier les virgules |
-| Port 2375/2376 occupé | `sudo lsof -i :2375` puis arrêter le processus |
-| Permissions `data-root` | `sudo chown -R root:root /path/to/data-root` |
-| Espace disque insuffisant | Voir [Section 2](#2-gestion-de-lespace-disque) |
+```yaml
+# In playbook
+vars:
+  docker_dns_servers:
+    - "8.8.8.8"
+    - "1.1.1.1"
+```
 
-**Résolution** :
+### 1.3 Configuring Proxy
+
+```yaml
+# In playbook
+vars:
+  docker_http_proxy: "http://proxy.company.com:8080"
+  docker_https_proxy: "http://proxy.company.com:8080"
+  docker_no_proxy: "localhost,127.0.0.1,.local"
+```
+
+---
+
+## 2. Storage Management
+
+### 2.1 Checking Disk Usage
+
 ```bash
-# Après correction, redémarrer
-sudo systemctl restart docker
+# Overall Docker disk usage
+docker system df
+
+# Detailed usage
+docker system df -v
+
+# Check data root location
+docker info | grep "Docker Root Dir"
+
+# Check filesystem usage
+df -h /var/lib/docker  # Or custom data root
+```
+
+### 2.2 Cleanup Operations
+
+```bash
+# Remove unused containers, networks, images
+docker system prune
+
+# Remove everything (including volumes)
+docker system prune -a --volumes
+
+# Remove old images (older than 24h)
+docker image prune -a --filter 'until=24h'
+
+# Remove stopped containers
+docker container prune
+
+# Remove unused volumes
+docker volume prune
+```
+
+### 2.3 Moving Data Root
+
+To move Docker's data directory:
+
+```yaml
+# In playbook
+vars:
+  docker_data_root: "/mnt/new-location/docker"
+```
+
+Then re-run the playbook. Docker will migrate data automatically.
+
+---
+
+## 3. Troubleshooting
+
+### 3.1 Docker Service Won't Start
+
+```bash
+# Check service status
 sudo systemctl status docker
+
+# Check logs
+sudo journalctl -u docker -n 100 --no-pager
+
+# Validate daemon.json
+sudo cat /etc/docker/daemon.json | jq .
+
+# Start in debug mode
+sudo dockerd --debug
+
+# Reset to defaults
+sudo mv /etc/docker/daemon.json /etc/docker/daemon.json.backup
+sudo systemctl restart docker
 ```
 
-### 1.2 Conteneur ne démarre pas
+### 3.2 Containers Can't Reach Internet
 
-**Diagnostic** :
 ```bash
-# Inspecter l'état du conteneur
-docker inspect <container_id> --format '{{.State.Status}}'
+# Check DNS configuration
+docker run --rm alpine nslookup google.com
 
-# Voir les logs de démarrage
-docker logs <container_id>
+# Check if IP forwarding is enabled
+sysctl net.ipv4.ip_forward
 
-# Voir les événements
-docker events --since 10m --filter container=<container_id>
+# Enable if disabled
+sudo sysctl -w net.ipv4.ip_forward=1
+
+# Check Docker network
+docker network inspect bridge
+
+# Restart Docker networking
+sudo systemctl restart docker
 ```
 
-**Causes fréquentes** :
+### 3.3 Permission Denied Errors
 
-| Message d'erreur | Solution |
-|-----------------|----------|
-| `OCI runtime create failed` | Vérifier les mounts et permissions |
-| `port is already allocated` | Libérer le port : `docker stop $(docker ps -q --filter publish=<port>)` |
-| `no space left on device` | Nettoyer l'espace disque (voir Section 2) |
-
-### 1.3 Problème de permissions utilisateur
-
-**Symptôme** : `permission denied while trying to connect to the Docker daemon socket`
-
-**Solution** :
 ```bash
-# Ajouter l'utilisateur au groupe docker
+# Check user groups
+groups $USER
+
+# Add user to docker group (if needed)
 sudo usermod -aG docker $USER
 
-# Appliquer sans déconnexion
-newgrp docker
+# Log out and back in
 
-# Vérifier
+# Verify
 docker ps
 ```
 
----
-
-## 2. Gestion de l'Espace Disque
-
-### 2.1 Diagnostiquer l'utilisation disque
+### 3.4 Disk Space Issues
 
 ```bash
-# Vue d'ensemble de l'utilisation Docker
-docker system df
+# Check disk usage
+df -h
 
-# Vue détaillée
-docker system df -v
-
-# Taille du data-root
-sudo du -sh /var/lib/docker
-# ou si configuré autrement
-sudo du -sh $(docker info --format '{{.DockerRootDir}}')
-```
-
-### 2.2 Nettoyage manuel
-
-```bash
-# Nettoyage complet (images, conteneurs arrêtés, volumes orphelins, cache)
+# Clean up Docker
 docker system prune -a --volumes
 
-# Nettoyage sélectif - conteneurs arrêtés uniquement
-docker container prune
+# Find large containers
+docker ps -as
 
-# Nettoyage sélectif - images non utilisées
-docker image prune -a
+# Find large images
+docker images --format '{{.Size}}\t{{.Repository}}:{{.Tag}}' | sort -h
 
-# Nettoyage sélectif - volumes orphelins
-docker volume prune
-
-# Nettoyage avec filtre temps (plus de 24h)
-docker system prune -a --filter "until=24h"
-```
-
-### 2.3 Nettoyage d'urgence (disque plein)
-
-**⚠️ ATTENTION : Procédure à risque**
-
-```bash
-# 1. Identifier les conteneurs les plus gourmands
-docker ps --size --format "table {{.ID}}\t{{.Names}}\t{{.Size}}"
-
-# 2. Identifier les images les plus volumineuses
-docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" | sort -k3 -h
-
-# 3. Supprimer les logs volumineux (temporaire)
-sudo sh -c 'truncate -s 0 /var/lib/docker/containers/*/*-json.log'
-
-# 4. Supprimer les images <none>
-docker rmi $(docker images -f "dangling=true" -q) 2>/dev/null
-
-# 5. Si toujours critique, supprimer les conteneurs arrêtés
-docker rm $(docker ps -a -q --filter status=exited)
-```
-
-### 2.4 Déplacer le data-root vers un nouveau disque
-
-**Scénario** : Disque /var plein, nouveau disque disponible sur /mnt/data
-
-```bash
-# 1. Arrêter Docker
-sudo systemctl stop docker
-
-# 2. Copier les données existantes
-sudo rsync -aP /var/lib/docker/ /mnt/data/docker/
-
-# 3. Configurer le nouveau chemin
-sudo cat << EOF > /etc/docker/daemon.json
-{
-  "data-root": "/mnt/data/docker",
-  "live-restore": true,
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "10m",
-    "max-file": "3"
-  }
-}
-EOF
-
-# 4. Démarrer Docker
-sudo systemctl start docker
-
-# 5. Vérifier
-docker info --format '{{.DockerRootDir}}'
-
-# 6. (Optionnel) Supprimer l'ancien répertoire après validation
-# sudo rm -rf /var/lib/docker
+# Remove old images
+docker image prune -a --filter 'until=72h'
 ```
 
 ---
 
-## 3. Problèmes Réseau
+## 4. Performance Optimization
 
-### 3.1 Conteneur n'a pas accès à Internet
+### 4.1 Monitoring Containers
 
-**Diagnostic** :
 ```bash
-# Tester depuis un conteneur
-docker run --rm alpine ping -c 3 8.8.8.8
-docker run --rm alpine nslookup google.com
+# Real-time stats
+docker stats
 
-# Vérifier la configuration réseau Docker
+# Stats for specific container
+docker stats <container_name>
+
+# One-time snapshot
+docker stats --no-stream
+
+# Formatted output
+docker stats --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+```
+
+### 4.2 Setting Resource Limits
+
+```bash
+# Run with memory limit
+docker run -m 512m myimage
+
+# Run with CPU limit
+docker run --cpus=".5" myimage
+
+# Combined limits
+docker run -m 512m --cpus=".5" myimage
+```
+
+### 4.3 Optimizing Images
+
+```bash
+# Use multi-stage builds
+# Use Alpine base images
+# Minimize layers
+# Use .dockerignore
+
+# Check image layers
+docker history myimage
+
+# Analyze image size
+docker images myimage
+```
+
+---
+
+## 5. Network Management
+
+### 5.1 Network Troubleshooting
+
+```bash
+# List networks
+docker network ls
+
+# Inspect network
 docker network inspect bridge
 
-# Vérifier iptables
-sudo iptables -L -n | grep -i docker
+# Test connectivity between containers
+docker run --rm --network=mynetwork alpine ping other-container
+
+# Check port bindings
+docker port <container>
+
+# View iptables rules
+sudo iptables -L -n | grep DOCKER
 ```
 
-**Solutions** :
+### 5.2 Creating Custom Networks
 
 ```bash
-# Redémarrer le daemon Docker
-sudo systemctl restart docker
+# Create bridge network
+docker network create mynetwork
 
-# Recréer le réseau bridge
-docker network rm bridge
-sudo systemctl restart docker
+# Run containers on custom network
+docker run -d --network mynetwork --name web nginx
+docker run -d --network mynetwork --name db mysql
 
-# Vérifier le forwarding IP
-cat /proc/sys/net/ipv4/ip_forward
-# Si 0, activer :
-sudo sysctl -w net.ipv4.ip_forward=1
+# Connect existing container to network
+docker network connect mynetwork <container>
 ```
-
-### 3.2 Conflits d'adresses IP
-
-**Symptôme** : Conflit avec le réseau interne de l'entreprise
-
-**Solution** : Configurer des plages d'adresses personnalisées
-
-```bash
-# Dans /etc/docker/daemon.json
-{
-  "bip": "172.26.0.1/16",
-  "default-address-pools": [
-    {"base": "172.27.0.0/16", "size": 24}
-  ]
-}
-```
-
-```bash
-# Appliquer
-sudo systemctl restart docker
-```
-
-### 3.3 Port non accessible depuis l'extérieur
-
-**Diagnostic** :
-```bash
-# Vérifier le mapping de ports
-docker port <container_id>
-
-# Vérifier l'écoute
-sudo ss -tlnp | grep <port>
-
-# Vérifier iptables
-sudo iptables -L -n -t nat | grep <port>
-```
-
-**Solution** : Vérifier que le conteneur écoute sur 0.0.0.0, pas 127.0.0.1
 
 ---
 
-## 4. Mise à Jour Docker
+##6. Security Best Practices
 
-### 4.1 Mise à jour standard
+### 6.1 Regular Updates
 
 ```bash
-# 1. Sauvegarder la configuration
-sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.bak
-
-# 2. Mettre à jour les paquets
+# Update Docker
 sudo apt update
 sudo apt upgrade docker-ce docker-ce-cli containerd.io
 
-# 3. Vérifier la version
+# Or re-run Ansible role
+ansible-playbook -i inventory playbook.yml
+```
+
+### 6.2 Scanning Images
+
+```bash
+# Scan image for vulnerabilities
+docker scan myimage:tag
+
+# Use only trusted images
+docker pull nginx  # Official images
+
+# Verify image signatures
+docker trust inspect nginx
+```
+
+### 6.3 Running Containers Securely
+
+```bash
+# Run as non-root user
+docker run --user 1000:1000 myimage
+
+# Drop capabilities
+docker run --cap-drop ALL myimage
+
+# Read-only filesystem
+docker run --read-only myimage
+
+# No new privileges
+docker run --security-opt="no-new-privileges:true" myimage
+```
+
+---
+
+## 7. Backup and Recovery
+
+### 7.1 Backing Up Volumes
+
+```bash
+# List volumes
+docker volume ls
+
+# Backup volume
+docker run --rm \
+  -v myvolume:/source:ro \
+  -v $(pwd):/backup \
+  ubuntu tar czf /backup/myvolume-$(date +%Y%m%d).tar.gz /source
+
+# Restore volume
+docker run --rm \
+  -v myvolume:/target \
+  -v $(pwd):/backup \
+  ubuntu tar xzf /backup/myvolume-YYYYMMDD.tar.gz -C /target --strip-components=1
+```
+
+### 7.2 Backing Up Containers
+
+```bash
+# Commit container to image
+docker commit mycontainer myimage:backup
+
+# Export image
+docker save myimage:backup | gzip > myimage-backup.tar.gz
+
+# Import on another system
+gunzip -c myimage-backup.tar.gz | docker load
+```
+
+### 7.3 Disaster Recovery
+
+```bash
+# If Docker won't start:
+# 1. Backup daemon.json and data
+sudo cp -r /var/lib/docker /var/lib/docker.backup
+
+# 2. Reinstall Docker (via role or manually)
+
+# 3. Restore configuration
+sudo cp /var/lib/docker.backup/daemon.json /etc/docker/
+
+# 4. Restart
+sudo systemctl restart docker
+```
+
+---
+
+## 8. Monitoring and Logging
+
+### 8.1 Container Logs
+
+```bash
+# View logs
+docker logs <container>
+
+# Follow logs
+docker logs -f <container>
+
+# Last N lines
+docker logs --tail 100 <container>
+
+# With timestamps
+docker logs -t <container>
+
+# Since timestamp
+docker logs --since 2023-01-01T00:00:00 <container>
+```
+
+### 8.2 Log Rotation
+
+Docker automatically rotates logs. Check configuration:
+
+```bash
+# View log configuration
+cat /etc/docker/daemon.json | jq '.["log-driver","log-opts"]'
+```
+
+### 8.3 Prometheus Metrics
+
+If enabled:
+
+```bash
+# Check metrics
+curl http://localhost:9323/metrics
+
+# Key metrics to monitor
+curl http://localhost:9323/metrics | grep -E "container_|engine_daemon"
+```
+
+---
+
+## 9. Common Scenarios
+
+### 9.1 High Memory Usage
+
+```bash
+# Find memory-heavy containers
+docker stats --no-stream --format "table {{.Name}}\t{{.MemUsage}}" | sort -k 2 -h
+
+# Restart container with limits
+docker update --memory 512m <container>
+
+# Or recreate with limit
+docker run -m 512m myimage
+```
+
+### 9.2 Slow Container Performance
+
+```bash
+# Check I/O stats
+docker stats
+
+# Check host resources
+top
+iostat -x 1
+
+# Check storage driver
+docker info | grep "Storage Driver"
+
+# Consider overlay2 if using devicemapper
+```
+
+### 9.3 Networking Issues
+
+```bash
+# Restart Docker networking
+sudo systemctl restart docker
+
+# Check firewall rules
+sudo ufw status
+sudo iptables -L -n
+
+# Reset Docker networks
+docker network prune
+
+# Recreate default networks
+sudo systemctl restart docker
+```
+
+---
+
+## 10. Maintenance Checklist
+
+**Weekly**:
+- [ ] Check disk usage: `docker system df`
+- [ ] Review container logs for errors
+- [ ] Check resource usage: `docker stats`
+
+**Monthly**:
+- [ ] Clean up unused resources: `docker system prune -a`
+- [ ] Update Docker: re-run Ansible role
+- [ ] Review and backup important volumes
+- [ ] Check for image updates
+
+**As Needed**:
+- [ ] Update daemon.json configuration
+- [ ] Adjust automatic cleanup schedule
+- [ ] Review and update security settings
+
+---
+
+## 11. Getting Help
+
+```bash
+# Docker documentation
+docker --help
+docker <command> --help
+
+# Check Docker version
 docker --version
+docker version
 
-# 4. Vérifier que les conteneurs live-restore sont toujours actifs
-docker ps
+# System information
+docker info
+
+# Check what changed
+docker diff <container>
+
+# Inspect any object
+docker inspect <container|image|volume|network>
 ```
 
-### 4.2 Rollback après mise à jour problématique
-
-```bash
-# 1. Arrêter Docker
-sudo systemctl stop docker
-
-# 2. Lister les versions disponibles
-apt-cache madison docker-ce
-
-# 3. Installer une version spécifique
-sudo apt install docker-ce=<VERSION> docker-ce-cli=<VERSION>
-
-# 4. Bloquer les mises à jour auto
-sudo apt-mark hold docker-ce docker-ce-cli
-
-# 5. Redémarrer
-sudo systemctl start docker
-```
-
----
-
-## 5. Récupération de Conteneurs
-
-### 5.1 Conteneur crashé en boucle
-
-```bash
-# Voir l'historique des restarts
-docker inspect <container_id> --format '{{.RestartCount}}'
-
-# Voir le dernier exit code
-docker inspect <container_id> --format '{{.State.ExitCode}}'
-
-# Copier les fichiers de config depuis le conteneur arrêté
-docker cp <container_id>:/path/to/config ./config_backup
-
-# Démarrer en mode interactif pour debug
-docker run -it --entrypoint /bin/sh <image>
-```
-
-### 5.2 Récupérer les données d'un conteneur supprimé
-
-**Si le volume était nommé** :
-```bash
-# Lister tous les volumes
-docker volume ls
-
-# Inspecter le volume
-docker volume inspect <volume_name>
-
-# Monter le volume dans un nouveau conteneur
-docker run -it -v <volume_name>:/data alpine ls -la /data
-```
-
-**Si le volume était anonyme** :
-```bash
-# Chercher dans le data-root
-sudo find /var/lib/docker/volumes -name "*.db" 2>/dev/null
-```
-
-### 5.3 Exporter/Importer un conteneur
-
-```bash
-# Exporter un conteneur (état courant)
-docker export <container_id> > container_backup.tar
-
-# Importer comme nouvelle image
-docker import container_backup.tar myapp:restored
-
-# Créer une image depuis un conteneur (avec historique)
-docker commit <container_id> myapp:snapshot
-```
-
----
-
-## 6. Scénarios Catastrophe
-
-### 6.1 🔴 Corruption du système de fichiers Docker
-
-**Symptômes** :
-- `docker ps` renvoie des erreurs
-- Conteneurs en état `Dead`
-- Erreurs `layer does not exist`
-
-**Procédure de récupération** :
-
-```bash
-# 1. SAUVEGARDER d'abord ce qui peut l'être
-sudo mkdir -p /backup/docker-emergency
-sudo cp -r /var/lib/docker/volumes /backup/docker-emergency/
-
-# 2. Arrêter Docker
-sudo systemctl stop docker
-
-# 3. Nettoyer le cache buildkit
-sudo rm -rf /var/lib/docker/buildkit
-
-# 4. Réparer avec check
-# (ATTENTION : peut supprimer des données corrompues)
-sudo dockerd --config-file=/etc/docker/daemon.json &
-docker system prune --all --volumes
-sudo pkill dockerd
-
-# 5. Si échec, réinitialisation complète
-# ⚠️ PERTE DE TOUTES LES DONNÉES ⚠️
-# sudo rm -rf /var/lib/docker
-# sudo systemctl start docker
-```
-
-### 6.2 🔴 Serveur reboote avec conteneurs critiques
-
-**Avec live-restore activé** (comportement par défaut du rôle) :
-
-```bash
-# Les conteneurs survivent au redémarrage du daemon
-# Vérifier l'état après reboot
-docker ps
-
-# Si conteneurs non visibles mais processus actifs
-sudo ps aux | grep containerd-shim
-
-# Reconnecter Docker aux conteneurs orphelins
-sudo systemctl restart containerd
-sudo systemctl restart docker
-```
-
-**Sans live-restore** :
-
-```bash
-# Lister les conteneurs avec restart policy
-docker ps -a --filter "status=exited" --format "{{.ID}} {{.Names}}"
-
-# Démarrer manuellement
-docker start <container_id>
-
-# Ou créer avec restart policy pour le futur
-docker update --restart unless-stopped <container_id>
-```
-
-### 6.3 🔴 Perte totale du serveur - Reconstruction
-
-**Pré-requis** : Avoir sauvegardé régulièrement les volumes et configurations
-
-```bash
-# 1. Réinstaller Docker via Ansible
-ansible-playbook -i inventaire playbook-docker.yml
-
-# 2. Restaurer les volumes depuis la sauvegarde
-sudo tar -xzf volumes_backup.tar.gz -C /var/lib/docker/
-
-# 3. Récupérer les images depuis le registry
-docker pull registry.example.com/app:latest
-
-# 4. Recréer les conteneurs (si docker-compose)
-docker-compose up -d
-
-# 5. Vérifier
-docker ps
-```
-
-### 6.4 🔴 Registry privé inaccessible
-
-**Scénario** : Le registry Harbor est down et vous devez déployer
-
-**Solutions temporaires** :
-
-```bash
-# 1. Utiliser le cache local (si l'image existe déjà)
-docker images | grep myapp
-docker run myapp:cached-version
-
-# 2. Exporter/importer entre serveurs
-# Sur serveur avec l'image :
-docker save myapp:latest | gzip > myapp.tar.gz
-scp myapp.tar.gz user@target:/tmp/
-
-# Sur serveur cible :
-gunzip -c /tmp/myapp.tar.gz | docker load
-
-# 3. Configurer un registry miroir temporaire
-docker run -d -p 5000:5000 registry:2
-docker tag myapp:latest localhost:5000/myapp:latest
-docker push localhost:5000/myapp:latest
-```
-
----
-
-## 7. Configuration Avancée
-
-### 7.1 Limiter les ressources par défaut
-
-```bash
-# Dans /etc/docker/daemon.json
-{
-  "default-ulimits": {
-    "nofile": {
-      "Name": "nofile",
-      "Hard": 64000,
-      "Soft": 64000
-    }
-  }
-}
-```
-
-### 7.2 Activer le mode debug
-
-```bash
-# Dans /etc/docker/daemon.json
-{
-  "debug": true
-}
-
-# Appliquer
-sudo systemctl restart docker
-
-# Voir les logs debug
-sudo journalctl -u docker -f
-```
-
-### 7.3 Configuration registre insecure
-
-```bash
-# Dans /etc/docker/daemon.json
-{
-  "insecure-registries": [
-    "registry.internal.lan:5000",
-    "10.0.0.50:5000"
-  ]
-}
-
-# Appliquer
-sudo systemctl restart docker
-```
-
----
-
-## 8. Monitoring et Alertes
-
-### 8.1 Métriques Prometheus
-
-```bash
-# Vérifier l'endpoint métriques
-curl -s http://localhost:9323/metrics | head -20
-
-# Métriques importantes à monitorer :
-# - engine_daemon_container_states_containers{state="running"}
-# - engine_daemon_health_checks_failed_total
-# - builder_builds_failed_total
-```
-
-### 8.2 Script de health check
-
-```bash
-#!/bin/bash
-# /usr/local/bin/docker-healthcheck.sh
-
-# Vérifier le service
-if ! systemctl is-active --quiet docker; then
-    echo "CRITICAL: Docker service is not running"
-    exit 2
-fi
-
-# Vérifier l'espace disque
-USAGE=$(docker system df --format '{{.Size}}' | head -1)
-echo "Docker disk usage: $USAGE"
-
-# Vérifier les conteneurs en erreur
-UNHEALTHY=$(docker ps --filter health=unhealthy --format '{{.Names}}' | wc -l)
-if [ "$UNHEALTHY" -gt 0 ]; then
-    echo "WARNING: $UNHEALTHY unhealthy containers"
-    docker ps --filter health=unhealthy --format '{{.Names}}'
-    exit 1
-fi
-
-echo "OK: Docker is healthy"
-exit 0
-```
-
-### 8.3 Alertes recommandées
-
-| Métrique | Seuil Warning | Seuil Critical |
-|----------|---------------|----------------|
-| Espace disque Docker | 70% | 85% |
-| Conteneurs unhealthy | > 0 | > 2 |
-| Conteneurs restarting | > 3/5min | > 10/5min |
-| Service Docker down | - | > 30s |
-
----
-
-## Annexe : Commandes de Référence Rapide
-
-```bash
-# Statut global
-docker system info
-docker system df
-
-# Nettoyage
-docker system prune -af --volumes
-
-# Debug
-docker events --since 1h
-journalctl -u docker --since "1 hour ago"
-
-# Inspection
-docker inspect <id> | jq .
-docker stats --no-stream
-
-# Réseau
-docker network ls
-docker network inspect bridge
-
-# Volumes
-docker volume ls
-docker volume inspect <name>
-```
+For more help, review the [Day 1 Guide](day1-guide.md) or the official Docker documentation.
