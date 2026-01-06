@@ -13,7 +13,7 @@ tags:
   - containers
   - security
   - production
-  - log-rotation 
+  - log_rotation 
   - debian
   - ubuntu
 
